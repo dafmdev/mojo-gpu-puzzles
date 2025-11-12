@@ -15,9 +15,10 @@ fn add_10_2d(
     a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     size: Int,
 ):
-    row = thread_idx.y
-    col = thread_idx.x
-    # FILL ME IN (roughly 2 lines)
+    row = Int(thread_idx.y)
+    col = Int(thread_idx.x)
+    if row < size and col < size:
+        output[row * size + col] = a[row * size + col] + 10
 
 
 # ANCHOR_END: add_10_2d

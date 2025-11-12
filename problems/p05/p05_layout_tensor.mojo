@@ -23,8 +23,11 @@ fn broadcast_add[
     b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     size: Int,
 ):
-    row = thread_idx.y
-    col = thread_idx.x
+    row = Int(thread_idx.y)
+    col = Int(thread_idx.x)
+
+    if row < size and col < size:
+        output[row, col] = a[0, col] + b[row, 0]
     # FILL ME IN (roughly 2 lines)
 
 
