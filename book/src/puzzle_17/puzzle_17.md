@@ -54,6 +54,7 @@ You can run the puzzle with:
   <div class="tab-buttons">
     <button class="tab-button">pixi NVIDIA (default)</button>
     <button class="tab-button">pixi AMD</button>
+    <button class="tab-button">pixi Apple</button>
     <button class="tab-button">uv</button>
   </div>
   <div class="tab-content">
@@ -67,6 +68,13 @@ pixi run p17
 
 ```bash
 pixi run -e amd p17
+```
+
+  </div>
+  <div class="tab-content">
+
+```bash
+pixi run -e apple p17
 ```
 
   </div>
@@ -181,7 +189,7 @@ Let's break down how this works in the larger context:
    ```mojo
    gpu_ctx = ctx.get_device_context()
    gpu_ctx.enqueue_memset(...)  # Zero output buffer
-   gpu_ctx.enqueue_function[...](...) # Schedule kernel
+   gpu_ctx.enqueue_function_checked[..., ...](...) # Schedule kernel
    ```
 
    - Device context manages GPU resources

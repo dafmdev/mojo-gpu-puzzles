@@ -18,8 +18,8 @@ alias ALPHA = Float32(2.5)  # SAXPY coefficient
 fn minimal_kernel[
     layout: Layout
 ](
-    y: LayoutTensor[mut=True, dtype, layout],
-    x: LayoutTensor[mut=False, dtype, layout],
+    y: LayoutTensor[dtype, layout, MutAnyOrigin],
+    x: LayoutTensor[dtype, layout, ImmutAnyOrigin],
     alpha: Float32,
     size: Int,
 ):
@@ -38,8 +38,8 @@ fn minimal_kernel[
 fn sophisticated_kernel[
     layout: Layout
 ](
-    y: LayoutTensor[mut=True, dtype, layout],
-    x: LayoutTensor[mut=False, dtype, layout],
+    y: LayoutTensor[dtype, layout, MutAnyOrigin],
+    x: LayoutTensor[dtype, layout, ImmutAnyOrigin],
     alpha: Float32,
     size: Int,
 ):
@@ -49,7 +49,7 @@ fn sophisticated_kernel[
     shared_cache = LayoutTensor[
         dtype,
         Layout.row_major(1024 * 12),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()  # 48KB
 
@@ -135,8 +135,8 @@ fn sophisticated_kernel[
 fn balanced_kernel[
     layout: Layout
 ](
-    y: LayoutTensor[mut=True, dtype, layout],
-    x: LayoutTensor[mut=False, dtype, layout],
+    y: LayoutTensor[dtype, layout, MutAnyOrigin],
+    x: LayoutTensor[dtype, layout, ImmutAnyOrigin],
     alpha: Float32,
     size: Int,
 ):
@@ -146,7 +146,7 @@ fn balanced_kernel[
     shared_cache = LayoutTensor[
         dtype,
         Layout.row_major(1024 * 4),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()  # 16KB total
 
@@ -196,18 +196,21 @@ fn benchmark_minimal_parameterized[test_size: Int](mut b: Bencher) raises:
     @always_inline
     fn minimal_workflow(ctx: DeviceContext) raises:
         alias layout = Layout.row_major(test_size)
-        y = ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
-        x = ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
+        y = ctx.enqueue_create_buffer[dtype](test_size)
+        y.enqueue_fill(0)
+        x = ctx.enqueue_create_buffer[dtype](test_size)
+        x.enqueue_fill(0)
 
         with y.map_to_host() as y_host, x.map_to_host() as x_host:
             for i in range(test_size):
                 x_host[i] = Float32(i + 1)
                 y_host[i] = Float32(i + 2)
 
-        y_tensor = LayoutTensor[mut=True, dtype, layout](y.unsafe_ptr())
-        x_tensor = LayoutTensor[mut=False, dtype, layout](x.unsafe_ptr())
+        y_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](y)
+        x_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](x)
 
-        ctx.enqueue_function[minimal_kernel[layout]](
+        alias kernel = minimal_kernel[layout]
+        ctx.enqueue_function_checked[kernel, kernel](
             y_tensor,
             x_tensor,
             ALPHA,
@@ -229,18 +232,21 @@ fn benchmark_sophisticated_parameterized[test_size: Int](mut b: Bencher) raises:
     @always_inline
     fn sophisticated_workflow(ctx: DeviceContext) raises:
         alias layout = Layout.row_major(test_size)
-        y = ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
-        x = ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
+        y = ctx.enqueue_create_buffer[dtype](test_size)
+        y.enqueue_fill(0)
+        x = ctx.enqueue_create_buffer[dtype](test_size)
+        x.enqueue_fill(0)
 
         with y.map_to_host() as y_host, x.map_to_host() as x_host:
             for i in range(test_size):
                 x_host[i] = Float32(i + 1)
                 y_host[i] = Float32(i + 2)
 
-        y_tensor = LayoutTensor[mut=True, dtype, layout](y.unsafe_ptr())
-        x_tensor = LayoutTensor[mut=False, dtype, layout](x.unsafe_ptr())
+        y_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](y)
+        x_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](x)
 
-        ctx.enqueue_function[sophisticated_kernel[layout]](
+        alias kernel = sophisticated_kernel[layout]
+        ctx.enqueue_function_checked[kernel, kernel](
             y_tensor,
             x_tensor,
             ALPHA,
@@ -262,18 +268,21 @@ fn benchmark_balanced_parameterized[test_size: Int](mut b: Bencher) raises:
     @always_inline
     fn balanced_workflow(ctx: DeviceContext) raises:
         alias layout = Layout.row_major(test_size)
-        y = ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
-        x = ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
+        y = ctx.enqueue_create_buffer[dtype](test_size)
+        y.enqueue_fill(0)
+        x = ctx.enqueue_create_buffer[dtype](test_size)
+        x.enqueue_fill(0)
 
         with y.map_to_host() as y_host, x.map_to_host() as x_host:
             for i in range(test_size):
                 x_host[i] = Float32(i + 1)
                 y_host[i] = Float32(i + 2)
 
-        y_tensor = LayoutTensor[mut=True, dtype, layout](y.unsafe_ptr())
-        x_tensor = LayoutTensor[mut=False, dtype, layout](x.unsafe_ptr())
+        y_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](y)
+        x_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](x)
 
-        ctx.enqueue_function[balanced_kernel[layout]](
+        alias kernel = balanced_kernel[layout]
+        ctx.enqueue_function_checked[kernel, kernel](
             y_tensor,
             x_tensor,
             ALPHA,
@@ -292,8 +301,10 @@ def test_minimal():
     """Test minimal kernel."""
     print("Testing minimal kernel...")
     with DeviceContext() as ctx:
-        y = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-        x = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
+        y = ctx.enqueue_create_buffer[dtype](SIZE)
+        y.enqueue_fill(0)
+        x = ctx.enqueue_create_buffer[dtype](SIZE)
+        x.enqueue_fill(0)
 
         # Initialize test data
         with y.map_to_host() as y_host, x.map_to_host() as x_host:
@@ -302,10 +313,11 @@ def test_minimal():
                 y_host[i] = Float32(i + 2)
 
         # Create LayoutTensors
-        y_tensor = LayoutTensor[mut=True, dtype, layout](y.unsafe_ptr())
-        x_tensor = LayoutTensor[mut=False, dtype, layout](x.unsafe_ptr())
+        y_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](y)
+        x_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](x)
 
-        ctx.enqueue_function[minimal_kernel[layout]](
+        alias kernel = minimal_kernel[layout]
+        ctx.enqueue_function_checked[kernel, kernel](
             y_tensor,
             x_tensor,
             ALPHA,
@@ -332,8 +344,10 @@ def test_sophisticated():
     """Test sophisticated kernel."""
     print("Testing sophisticated kernel...")
     with DeviceContext() as ctx:
-        y = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-        x = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
+        y = ctx.enqueue_create_buffer[dtype](SIZE)
+        y.enqueue_fill(0)
+        x = ctx.enqueue_create_buffer[dtype](SIZE)
+        x.enqueue_fill(0)
 
         # Initialize test data
         with y.map_to_host() as y_host, x.map_to_host() as x_host:
@@ -342,10 +356,11 @@ def test_sophisticated():
                 y_host[i] = Float32(i + 2)
 
         # Create LayoutTensors
-        y_tensor = LayoutTensor[mut=True, dtype, layout](y.unsafe_ptr())
-        x_tensor = LayoutTensor[mut=False, dtype, layout](x.unsafe_ptr())
+        y_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](y)
+        x_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](x)
 
-        ctx.enqueue_function[sophisticated_kernel[layout]](
+        alias kernel = sophisticated_kernel[layout]
+        ctx.enqueue_function_checked[kernel, kernel](
             y_tensor,
             x_tensor,
             ALPHA,
@@ -373,8 +388,10 @@ def test_balanced():
     """Test balanced kernel."""
     print("Testing balanced kernel...")
     with DeviceContext() as ctx:
-        y = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-        x = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
+        y = ctx.enqueue_create_buffer[dtype](SIZE)
+        y.enqueue_fill(0)
+        x = ctx.enqueue_create_buffer[dtype](SIZE)
+        x.enqueue_fill(0)
 
         # Initialize test data
         with y.map_to_host() as y_host, x.map_to_host() as x_host:
@@ -383,10 +400,11 @@ def test_balanced():
                 y_host[i] = Float32(i + 2)
 
         # Create LayoutTensors
-        y_tensor = LayoutTensor[mut=True, dtype, layout](y.unsafe_ptr())
-        x_tensor = LayoutTensor[mut=False, dtype, layout](x.unsafe_ptr())
+        y_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](y)
+        x_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](x)
 
-        ctx.enqueue_function[balanced_kernel[layout]](
+        alias kernel = balanced_kernel[layout]
+        ctx.enqueue_function_checked[kernel, kernel](
             y_tensor,
             x_tensor,
             ALPHA,

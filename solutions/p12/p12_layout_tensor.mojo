@@ -17,15 +17,15 @@ alias out_layout = Layout.row_major(1)
 fn dot_product[
     in_layout: Layout, out_layout: Layout
 ](
-    output: LayoutTensor[mut=True, dtype, out_layout],
-    a: LayoutTensor[mut=True, dtype, in_layout],
-    b: LayoutTensor[mut=True, dtype, in_layout],
+    output: LayoutTensor[dtype, out_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, in_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, in_layout, ImmutAnyOrigin],
     size: Int,
 ):
     shared = LayoutTensor[
         dtype,
         Layout.row_major(TPB),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     global_i = block_dim.x * block_idx.x + thread_idx.x
@@ -57,20 +57,24 @@ fn dot_product[
 
 def main():
     with DeviceContext() as ctx:
-        out = ctx.enqueue_create_buffer[dtype](1).enqueue_fill(0)
-        a = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-        b = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
+        out = ctx.enqueue_create_buffer[dtype](1)
+        out.enqueue_fill(0)
+        a = ctx.enqueue_create_buffer[dtype](SIZE)
+        a.enqueue_fill(0)
+        b = ctx.enqueue_create_buffer[dtype](SIZE)
+        b.enqueue_fill(0)
 
         with a.map_to_host() as a_host, b.map_to_host() as b_host:
             for i in range(SIZE):
                 a_host[i] = i
                 b_host[i] = i
 
-        out_tensor = LayoutTensor[dtype, out_layout](out.unsafe_ptr())
-        a_tensor = LayoutTensor[dtype, layout](a.unsafe_ptr())
-        b_tensor = LayoutTensor[dtype, layout](b.unsafe_ptr())
+        out_tensor = LayoutTensor[dtype, out_layout, MutAnyOrigin](out)
+        a_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](a)
+        b_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](b)
 
-        ctx.enqueue_function[dot_product[layout, out_layout]](
+        alias kernel = dot_product[layout, out_layout]
+        ctx.enqueue_function_checked[kernel, kernel](
             out_tensor,
             a_tensor,
             b_tensor,
@@ -79,7 +83,8 @@ def main():
             block_dim=THREADS_PER_BLOCK,
         )
 
-        expected = ctx.enqueue_create_host_buffer[dtype](1).enqueue_fill(0)
+        expected = ctx.enqueue_create_host_buffer[dtype](1)
+        expected.enqueue_fill(0)
         ctx.synchronize()
 
         with a.map_to_host() as a_host, b.map_to_host() as b_host:

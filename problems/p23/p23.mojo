@@ -20,9 +20,9 @@ alias SIMD_WIDTH = simd_width_of[dtype, target = get_gpu_target()]()
 fn elementwise_add[
     layout: Layout, dtype: DType, simd_width: Int, rank: Int, size: Int
 ](
-    output: LayoutTensor[mut=True, dtype, layout, MutableAnyOrigin],
-    a: LayoutTensor[mut=False, dtype, layout, MutableAnyOrigin],
-    b: LayoutTensor[mut=False, dtype, layout, MutableAnyOrigin],
+    output: LayoutTensor[mut=True, dtype, layout, MutAnyOrigin],
+    a: LayoutTensor[mut=False, dtype, layout, MutAnyOrigin],
+    b: LayoutTensor[mut=False, dtype, layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     @parameter
@@ -52,9 +52,9 @@ fn tiled_elementwise_add[
     size: Int,
     tile_size: Int,
 ](
-    output: LayoutTensor[mut=True, dtype, layout, MutableAnyOrigin],
-    a: LayoutTensor[mut=False, dtype, layout, MutableAnyOrigin],
-    b: LayoutTensor[mut=False, dtype, layout, MutableAnyOrigin],
+    output: LayoutTensor[mut=True, dtype, layout, MutAnyOrigin],
+    a: LayoutTensor[mut=False, dtype, layout, MutAnyOrigin],
+    b: LayoutTensor[mut=False, dtype, layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     @parameter
@@ -87,9 +87,9 @@ fn manual_vectorized_tiled_elementwise_add[
     size: Int,
     tile_size: Int,
 ](
-    output: LayoutTensor[mut=True, dtype, layout, MutableAnyOrigin],
-    a: LayoutTensor[mut=False, dtype, layout, MutableAnyOrigin],
-    b: LayoutTensor[mut=False, dtype, layout, MutableAnyOrigin],
+    output: LayoutTensor[mut=True, dtype, layout, MutAnyOrigin],
+    a: LayoutTensor[mut=False, dtype, layout, MutAnyOrigin],
+    b: LayoutTensor[mut=False, dtype, layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     # Each tile contains tile_size groups of simd_width elements
@@ -128,9 +128,9 @@ fn vectorize_within_tiles_elementwise_add[
     size: Int,
     tile_size: Int,
 ](
-    output: LayoutTensor[mut=True, dtype, layout, MutableAnyOrigin],
-    a: LayoutTensor[mut=False, dtype, layout, MutableAnyOrigin],
-    b: LayoutTensor[mut=False, dtype, layout, MutableAnyOrigin],
+    output: LayoutTensor[mut=True, dtype, layout, MutAnyOrigin],
+    a: LayoutTensor[mut=False, dtype, layout, MutAnyOrigin],
+    b: LayoutTensor[mut=False, dtype, layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     # Each tile contains tile_size elements (not SIMD groups)
@@ -172,22 +172,25 @@ fn benchmark_elementwise_parameterized[
 ](mut b: Bencher) raises:
     bench_ctx = DeviceContext()
     alias layout = Layout.row_major(test_size)
-    out = bench_ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
-    a = bench_ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
-    b_buf = bench_ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
+    out = bench_ctx.enqueue_create_buffer[dtype](test_size)
+    out.enqueue_fill(0)
+    a = bench_ctx.enqueue_create_buffer[dtype](test_size)
+    a.enqueue_fill(0)
+    b_buf = bench_ctx.enqueue_create_buffer[dtype](test_size)
+    b_buf.enqueue_fill(0)
 
     with a.map_to_host() as a_host, b_buf.map_to_host() as b_host:
         for i in range(test_size):
             a_host[i] = 2 * i
             b_host[i] = 2 * i + 1
 
-    a_tensor = LayoutTensor[mut=False, dtype, layout, MutableAnyOrigin](
+    a_tensor = LayoutTensor[mut=False, dtype, layout, MutAnyOrigin](
         a.unsafe_ptr()
     )
-    b_tensor = LayoutTensor[mut=False, dtype, layout, MutableAnyOrigin](
+    b_tensor = LayoutTensor[mut=False, dtype, layout, MutAnyOrigin](
         b_buf.unsafe_ptr()
     )
-    out_tensor = LayoutTensor[mut=True, dtype, layout, MutableAnyOrigin](
+    out_tensor = LayoutTensor[mut=True, dtype, layout, MutAnyOrigin](
         out.unsafe_ptr()
     )
 
@@ -210,9 +213,12 @@ fn benchmark_tiled_parameterized[
 ](mut b: Bencher) raises:
     bench_ctx = DeviceContext()
     alias layout = Layout.row_major(test_size)
-    out = bench_ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
-    a = bench_ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
-    b_buf = bench_ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
+    out = bench_ctx.enqueue_create_buffer[dtype](test_size)
+    out.enqueue_fill(0)
+    a = bench_ctx.enqueue_create_buffer[dtype](test_size)
+    a.enqueue_fill(0)
+    b_buf = bench_ctx.enqueue_create_buffer[dtype](test_size)
+    b_buf.enqueue_fill(0)
 
     with a.map_to_host() as a_host, b_buf.map_to_host() as b_host:
         for i in range(test_size):
@@ -242,9 +248,12 @@ fn benchmark_manual_vectorized_parameterized[
 ](mut b: Bencher) raises:
     bench_ctx = DeviceContext()
     alias layout = Layout.row_major(test_size)
-    out = bench_ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
-    a = bench_ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
-    b_buf = bench_ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
+    out = bench_ctx.enqueue_create_buffer[dtype](test_size)
+    out.enqueue_fill(0)
+    a = bench_ctx.enqueue_create_buffer[dtype](test_size)
+    a.enqueue_fill(0)
+    b_buf = bench_ctx.enqueue_create_buffer[dtype](test_size)
+    b_buf.enqueue_fill(0)
 
     with a.map_to_host() as a_host, b_buf.map_to_host() as b_host:
         for i in range(test_size):
@@ -274,9 +283,12 @@ fn benchmark_vectorized_parameterized[
 ](mut b: Bencher) raises:
     bench_ctx = DeviceContext()
     alias layout = Layout.row_major(test_size)
-    out = bench_ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
-    a = bench_ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
-    b_buf = bench_ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
+    out = bench_ctx.enqueue_create_buffer[dtype](test_size)
+    out.enqueue_fill(0)
+    a = bench_ctx.enqueue_create_buffer[dtype](test_size)
+    a.enqueue_fill(0)
+    b_buf = bench_ctx.enqueue_create_buffer[dtype](test_size)
+    b_buf.enqueue_fill(0)
 
     with a.map_to_host() as a_host, b_buf.map_to_host() as b_host:
         for i in range(test_size):
@@ -301,10 +313,14 @@ fn benchmark_vectorized_parameterized[
 
 def main():
     ctx = DeviceContext()
-    out = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-    a = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-    b = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-    expected = ctx.enqueue_create_host_buffer[dtype](SIZE).enqueue_fill(0)
+    out = ctx.enqueue_create_buffer[dtype](SIZE)
+    out.enqueue_fill(0)
+    a = ctx.enqueue_create_buffer[dtype](SIZE)
+    a.enqueue_fill(0)
+    b = ctx.enqueue_create_buffer[dtype](SIZE)
+    b.enqueue_fill(0)
+    expected = ctx.enqueue_create_host_buffer[dtype](SIZE)
+    expected.enqueue_fill(0)
 
     with a.map_to_host() as a_host, b.map_to_host() as b_host:
         for i in range(SIZE):

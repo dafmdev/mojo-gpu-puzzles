@@ -16,8 +16,8 @@ alias layout = Layout.row_major(SIZE, SIZE)
 
 
 fn shared_memory_race(
-    output: LayoutTensor[mut=True, dtype, layout],
-    a: LayoutTensor[mut=False, dtype, layout],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, layout, ImmutAnyOrigin],
     size: Int,
 ):
     """Fixed: sequential access with barriers eliminates race conditions."""
@@ -27,7 +27,7 @@ fn shared_memory_race(
     shared_sum = LayoutTensor[
         dtype,
         Layout.row_major(1),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -53,8 +53,8 @@ fn shared_memory_race(
 
 # ANCHOR: add_10_2d_solution
 fn add_10_2d(
-    output: LayoutTensor[mut=True, dtype, layout],
-    a: LayoutTensor[mut=True, dtype, layout],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, layout, ImmutAnyOrigin],
     size: Int,
 ):
     row = thread_idx.y
@@ -77,23 +77,24 @@ def main():
     flag = argv()[1]
 
     with DeviceContext() as ctx:
-        out_buf = ctx.enqueue_create_buffer[dtype](SIZE * SIZE).enqueue_fill(0)
-        out_tensor = LayoutTensor[mut=True, dtype, layout](
-            out_buf.unsafe_ptr()
-        ).reshape[layout]()
+        out_buf = ctx.enqueue_create_buffer[dtype](SIZE * SIZE)
+        out_buf.enqueue_fill(0)
+        out_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](out_buf).reshape[
+            layout
+        ]()
         print("out shape:", out_tensor.shape[0](), "x", out_tensor.shape[1]())
-        expected = ctx.enqueue_create_host_buffer[dtype](
-            SIZE * SIZE
-        ).enqueue_fill(0)
+        expected = ctx.enqueue_create_host_buffer[dtype](SIZE * SIZE)
+        expected.enqueue_fill(0)
 
-        a = ctx.enqueue_create_buffer[dtype](SIZE * SIZE).enqueue_fill(0)
+        a = ctx.enqueue_create_buffer[dtype](SIZE * SIZE)
+        a.enqueue_fill(0)
         with a.map_to_host() as a_host:
             for i in range(SIZE * SIZE):
                 a_host[i] = i
 
-        a_tensor = LayoutTensor[mut=True, dtype, layout](
-            a.unsafe_ptr()
-        ).reshape[layout]()
+        a_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](a).reshape[
+            layout
+        ]()
 
         if flag == "--memory-bug":
             print("Running memory bug example (bounds checking issue)...")
@@ -101,7 +102,7 @@ def main():
             for i in range(SIZE * SIZE):
                 expected[i] = i + 10
 
-            ctx.enqueue_function[add_10_2d](
+            ctx.enqueue_function_checked[add_10_2d, add_10_2d](
                 out_tensor,
                 a_tensor,
                 SIZE,
@@ -133,7 +134,9 @@ def main():
             for i in range(SIZE * SIZE):
                 expected[i] = total_sum
 
-            ctx.enqueue_function[shared_memory_race](
+            ctx.enqueue_function_checked[
+                shared_memory_race, shared_memory_race
+            ](
                 out_tensor,
                 a_tensor,
                 SIZE,

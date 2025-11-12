@@ -17,8 +17,8 @@ alias layout = Layout.row_major(SIZE)
 fn butterfly_pair_swap[
     layout: Layout, size: Int
 ](
-    output: LayoutTensor[mut=True, dtype, layout],
-    input: LayoutTensor[mut=False, dtype, layout],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
+    input: LayoutTensor[dtype, layout, ImmutAnyOrigin],
 ):
     """
     Basic butterfly pair swap: Exchange values between adjacent pairs using XOR pattern.
@@ -47,8 +47,8 @@ fn butterfly_pair_swap[
 fn butterfly_parallel_max[
     layout: Layout, size: Int
 ](
-    output: LayoutTensor[mut=True, dtype, layout],
-    input: LayoutTensor[mut=False, dtype, layout],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
+    input: LayoutTensor[dtype, layout, ImmutAnyOrigin],
 ):
     """
     Parallel maximum reduction using butterfly pattern.
@@ -85,8 +85,8 @@ alias layout_2 = Layout.row_major(SIZE_2)
 fn butterfly_conditional_max[
     layout: Layout, size: Int
 ](
-    output: LayoutTensor[mut=True, dtype, layout],
-    input: LayoutTensor[mut=False, dtype, layout],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
+    input: LayoutTensor[dtype, layout, ImmutAnyOrigin],
 ):
     """
     Conditional butterfly maximum: Perform butterfly max reduction, but only store result
@@ -125,8 +125,8 @@ fn butterfly_conditional_max[
 fn warp_inclusive_prefix_sum[
     layout: Layout, size: Int
 ](
-    output: LayoutTensor[mut=True, dtype, layout],
-    input: LayoutTensor[mut=False, dtype, layout],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
+    input: LayoutTensor[dtype, layout, ImmutAnyOrigin],
 ):
     """
     Inclusive prefix sum using warp primitive: Each thread gets sum of all elements up to and including its position.
@@ -168,8 +168,8 @@ fn warp_inclusive_prefix_sum[
 fn warp_partition[
     layout: Layout, size: Int
 ](
-    output: LayoutTensor[mut=True, dtype, layout],
-    input: LayoutTensor[mut=False, dtype, layout],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
+    input: LayoutTensor[dtype, layout, ImmutAnyOrigin],
     pivot: Float32,
 ):
     """
@@ -224,30 +224,28 @@ fn warp_partition[
 
 def test_butterfly_pair_swap():
     with DeviceContext() as ctx:
-        input_buf = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-        output_buf = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
+        input_buf = ctx.enqueue_create_buffer[dtype](SIZE)
+        input_buf.enqueue_fill(0)
+        output_buf = ctx.enqueue_create_buffer[dtype](SIZE)
+        input_buf.enqueue_fill(0)
 
         with input_buf.map_to_host() as input_host:
             for i in range(SIZE):
                 input_host[i] = i
 
-        input_tensor = LayoutTensor[mut=False, dtype, layout](
-            input_buf.unsafe_ptr()
-        )
-        output_tensor = LayoutTensor[mut=False, dtype, layout](
-            output_buf.unsafe_ptr()
-        )
+        input_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](input_buf)
+        output_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](output_buf)
 
-        ctx.enqueue_function[butterfly_pair_swap[layout, SIZE]](
+        alias kernel = butterfly_pair_swap[layout, SIZE]
+        ctx.enqueue_function_checked[kernel, kernel](
             output_tensor,
             input_tensor,
             grid_dim=BLOCKS_PER_GRID,
             block_dim=THREADS_PER_BLOCK,
         )
 
-        expected_buf = ctx.enqueue_create_host_buffer[dtype](SIZE).enqueue_fill(
-            0
-        )
+        expected_buf = ctx.enqueue_create_host_buffer[dtype](SIZE)
+        expected_buf.enqueue_fill(0)
         ctx.synchronize()
 
         # Create expected results: pairs should be swapped
@@ -271,8 +269,10 @@ def test_butterfly_pair_swap():
 
 def test_butterfly_parallel_max():
     with DeviceContext() as ctx:
-        input_buf = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-        output_buf = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
+        input_buf = ctx.enqueue_create_buffer[dtype](SIZE)
+        input_buf.enqueue_fill(0)
+        output_buf = ctx.enqueue_create_buffer[dtype](SIZE)
+        output_buf.enqueue_fill(0)
 
         with input_buf.map_to_host() as input_host:
             for i in range(SIZE):
@@ -280,14 +280,11 @@ def test_butterfly_parallel_max():
             # Make sure we have a clear maximum
             input_host[SIZE - 1] = 1000.0
 
-        input_tensor = LayoutTensor[mut=False, dtype, layout](
-            input_buf.unsafe_ptr()
-        )
-        output_tensor = LayoutTensor[mut=False, dtype, layout](
-            output_buf.unsafe_ptr()
-        )
+        input_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](input_buf)
+        output_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](output_buf)
 
-        ctx.enqueue_function[butterfly_parallel_max[layout, SIZE]](
+        alias kernel = butterfly_parallel_max[layout, SIZE]
+        ctx.enqueue_function_checked[kernel, kernel](
             output_tensor,
             input_tensor,
             grid_dim=BLOCKS_PER_GRID,
@@ -296,9 +293,8 @@ def test_butterfly_parallel_max():
 
         ctx.synchronize()
 
-        expected_buf = ctx.enqueue_create_host_buffer[dtype](SIZE).enqueue_fill(
-            1000.0
-        )
+        expected_buf = ctx.enqueue_create_host_buffer[dtype](SIZE)
+        expected_buf.enqueue_fill(1000.0)
 
         # All threads should have the maximum value (1000.0)
         with output_buf.map_to_host() as output_host:
@@ -313,8 +309,10 @@ def test_butterfly_parallel_max():
 
 def test_butterfly_conditional_max():
     with DeviceContext() as ctx:
-        input_buf = ctx.enqueue_create_buffer[dtype](SIZE_2).enqueue_fill(0)
-        output_buf = ctx.enqueue_create_buffer[dtype](SIZE_2).enqueue_fill(0)
+        input_buf = ctx.enqueue_create_buffer[dtype](SIZE_2)
+        input_buf.enqueue_fill(0)
+        output_buf = ctx.enqueue_create_buffer[dtype](SIZE_2)
+        output_buf.enqueue_fill(0)
 
         with input_buf.map_to_host() as input_host:
             for i in range(SIZE_2):
@@ -324,14 +322,11 @@ def test_butterfly_conditional_max():
                 else:
                     input_host[i] = i % 10
 
-        input_tensor = LayoutTensor[mut=False, dtype, layout_2](
-            input_buf.unsafe_ptr()
-        )
-        output_tensor = LayoutTensor[mut=False, dtype, layout_2](
-            output_buf.unsafe_ptr()
-        )
+        input_tensor = LayoutTensor[dtype, layout_2, ImmutAnyOrigin](input_buf)
+        output_tensor = LayoutTensor[dtype, layout_2, MutAnyOrigin](output_buf)
 
-        ctx.enqueue_function[butterfly_conditional_max[layout_2, SIZE_2]](
+        alias kernel = butterfly_conditional_max[layout_2, SIZE_2]
+        ctx.enqueue_function_checked[kernel, kernel](
             output_tensor,
             input_tensor,
             grid_dim=BLOCKS_PER_GRID_2,
@@ -340,9 +335,8 @@ def test_butterfly_conditional_max():
 
         ctx.synchronize()
 
-        expected_buf = ctx.enqueue_create_host_buffer[dtype](
-            SIZE_2
-        ).enqueue_fill(0)
+        expected_buf = ctx.enqueue_create_host_buffer[dtype](SIZE_2)
+        expected_buf.enqueue_fill(0)
 
         # Expected: even lanes get max, odd lanes get min
         with input_buf.map_to_host() as input_host:
@@ -375,30 +369,29 @@ def test_butterfly_conditional_max():
 
 def test_warp_inclusive_prefix_sum():
     with DeviceContext() as ctx:
-        input_buf = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-        output_buf = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
+        input_buf = ctx.enqueue_create_buffer[dtype](SIZE)
+        input_buf.enqueue_fill(0)
+        output_buf = ctx.enqueue_create_buffer[dtype](SIZE)
+        output_buf.enqueue_fill(0)
 
         with input_buf.map_to_host() as input_host:
             for i in range(SIZE):
                 input_host[i] = i + 1
 
-        input_tensor = LayoutTensor[mut=False, dtype, layout](
-            input_buf.unsafe_ptr()
-        )
-        output_tensor = LayoutTensor[mut=False, dtype, layout](
-            output_buf.unsafe_ptr()
-        )
+        input_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](input_buf)
+        output_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](output_buf)
 
-        ctx.enqueue_function[warp_inclusive_prefix_sum[layout, SIZE]](
+        alias kernel = warp_inclusive_prefix_sum[layout, SIZE]
+        ctx.enqueue_function_checked[kernel, kernel](
             output_tensor,
             input_tensor,
             grid_dim=BLOCKS_PER_GRID,
             block_dim=THREADS_PER_BLOCK,
         )
 
-        expected_buf = ctx.enqueue_create_host_buffer[dtype](SIZE).enqueue_fill(
-            0
-        )
+        expected_buf = ctx.enqueue_create_host_buffer[dtype](SIZE)
+        expected_buf.enqueue_fill(0)
+
         ctx.synchronize()
 
         # Create expected inclusive prefix sum: [1, 3, 6, 10, 15, 21, 28, 36, ...]
@@ -418,8 +411,10 @@ def test_warp_inclusive_prefix_sum():
 
 def test_warp_partition():
     with DeviceContext() as ctx:
-        input_buf = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-        output_buf = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
+        input_buf = ctx.enqueue_create_buffer[dtype](SIZE)
+        input_buf.enqueue_fill(0)
+        output_buf = ctx.enqueue_create_buffer[dtype](SIZE)
+        output_buf.enqueue_fill(0)
 
         # Create test data: mix of values above and below pivot
         pivot_value = Float32(5.0)
@@ -429,14 +424,11 @@ def test_warp_partition():
             for i in range(SIZE):
                 input_host[i] = test_values[i % len(test_values)]
 
-        input_tensor = LayoutTensor[mut=False, dtype, layout](
-            input_buf.unsafe_ptr()
-        )
-        output_tensor = LayoutTensor[mut=False, dtype, layout](
-            output_buf.unsafe_ptr()
-        )
+        input_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](input_buf)
+        output_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](output_buf)
 
-        ctx.enqueue_function[warp_partition[layout, SIZE]](
+        alias kernel = warp_partition[layout, SIZE]
+        ctx.enqueue_function_checked[kernel, kernel](
             output_tensor,
             input_tensor,
             pivot_value,
@@ -444,9 +436,9 @@ def test_warp_partition():
             block_dim=THREADS_PER_BLOCK,
         )
 
-        expected_buf = ctx.enqueue_create_host_buffer[dtype](SIZE).enqueue_fill(
-            0
-        )
+        expected_buf = ctx.enqueue_create_host_buffer[dtype](SIZE)
+        expected_buf.enqueue_fill(0)
+
         ctx.synchronize()
 
         # Create expected results: elements < 5 on left, >= 5 on right

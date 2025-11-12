@@ -11,9 +11,9 @@ alias dtype = DType.float32
 
 # ANCHOR: broadcast_add_solution
 fn broadcast_add(
-    output: UnsafePointer[Scalar[dtype]],
-    a: UnsafePointer[Scalar[dtype]],
-    b: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     size: Int,
 ):
     row = thread_idx.y
@@ -27,12 +27,14 @@ fn broadcast_add(
 
 def main():
     with DeviceContext() as ctx:
-        out = ctx.enqueue_create_buffer[dtype](SIZE * SIZE).enqueue_fill(0)
-        expected = ctx.enqueue_create_host_buffer[dtype](
-            SIZE * SIZE
-        ).enqueue_fill(0)
-        a = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-        b = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
+        out = ctx.enqueue_create_buffer[dtype](SIZE * SIZE)
+        out.enqueue_fill(0)
+        expected = ctx.enqueue_create_host_buffer[dtype](SIZE * SIZE)
+        expected.enqueue_fill(0)
+        a = ctx.enqueue_create_buffer[dtype](SIZE)
+        a.enqueue_fill(0)
+        b = ctx.enqueue_create_buffer[dtype](SIZE)
+        b.enqueue_fill(0)
         with a.map_to_host() as a_host, b.map_to_host() as b_host:
             for i in range(SIZE):
                 a_host[i] = i + 1
@@ -42,10 +44,10 @@ def main():
                 for x in range(SIZE):
                     expected[y * SIZE + x] = a_host[x] + b_host[y]
 
-        ctx.enqueue_function[broadcast_add](
-            out.unsafe_ptr(),
-            a.unsafe_ptr(),
-            b.unsafe_ptr(),
+        ctx.enqueue_function_checked[broadcast_add, broadcast_add](
+            out,
+            a,
+            b,
             SIZE,
             grid_dim=BLOCKS_PER_GRID,
             block_dim=THREADS_PER_BLOCK,

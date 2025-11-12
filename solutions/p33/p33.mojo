@@ -25,9 +25,9 @@ alias THREADS_PER_BLOCK_TILED = (TILE_SIZE, TILE_SIZE)
 fn matmul_idiomatic_tiled[
     layout: Layout, size: Int
 ](
-    output: LayoutTensor[mut=True, dtype, layout],
-    a: LayoutTensor[mut=False, dtype, layout],
-    b: LayoutTensor[mut=False, dtype, layout],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, layout, ImmutAnyOrigin],
 ):
     # Use block_dim to get actual tile size dynamically
     var tile_size_x = block_dim.x
@@ -43,13 +43,13 @@ fn matmul_idiomatic_tiled[
     a_shared = LayoutTensor[
         dtype,
         Layout.row_major(TILE_SIZE, TILE_SIZE),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     b_shared = LayoutTensor[
         dtype,
         Layout.row_major(TILE_SIZE, TILE_SIZE),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -133,9 +133,9 @@ fn tensor_core_matrix_multiplication[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[mut=False, dtype, layout_a],
-    B: LayoutTensor[mut=False, dtype, layout_b],
-    C: LayoutTensor[mut=True, dtype, layout_c],
+    A: LayoutTensor[dtype, layout_a, ImmutAnyOrigin],
+    B: LayoutTensor[dtype, layout_b, ImmutAnyOrigin],
+    C: LayoutTensor[dtype, layout_c, MutAnyOrigin],
 ):
     alias M = C.shape[0]()
     alias N = C.shape[1]()
@@ -158,13 +158,13 @@ fn tensor_core_matrix_multiplication[
     A_sram_tile = LayoutTensor[
         A.dtype,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_tile = LayoutTensor[
         B.dtype,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -172,7 +172,7 @@ fn tensor_core_matrix_multiplication[
     C_warp_accum = LayoutTensor[
         C.dtype,
         Layout.row_major(WM, WN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -277,14 +277,12 @@ def main():
 
     with DeviceContext() as ctx:
         # Create buffers
-        out_tensor_core = ctx.enqueue_create_buffer[dtype](
-            SIZE * SIZE
-        ).enqueue_fill(0)
+        out_tensor_core = ctx.enqueue_create_buffer[dtype](SIZE * SIZE)
+        out_tensor_core.enqueue_fill(0)
         inp1 = ctx.enqueue_create_buffer[dtype](SIZE * SIZE)
         inp2 = ctx.enqueue_create_buffer[dtype](SIZE * SIZE)
-        expected = ctx.enqueue_create_host_buffer[dtype](
-            SIZE * SIZE
-        ).enqueue_fill(0)
+        expected = ctx.enqueue_create_host_buffer[dtype](SIZE * SIZE)
+        expected.enqueue_fill(0)
 
         # Initialize data (like p16.mojo)
         with inp1.map_to_host() as inp1_host, inp2.map_to_host() as inp2_host:
@@ -305,27 +303,26 @@ def main():
         out_tensor_core_layout = LayoutTensor[dtype, layout](
             out_tensor_core.unsafe_ptr()
         )
-        a_tensor = LayoutTensor[mut=False, dtype, layout](inp1.unsafe_ptr())
-        b_tensor = LayoutTensor[mut=False, dtype, layout](inp2.unsafe_ptr())
+        a_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](inp1)
+        b_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](inp2)
 
         if mode == "--tensor-core":
             print("\n=== Running ACTUAL Tensor Core Matrix Multiplication ===")
-            ctx.enqueue_function[
-                tensor_core_matrix_multiplication[
-                    dtype,
-                    layout,
-                    layout,
-                    layout,
-                    BM,
-                    BN,
-                    BK,
-                    WM,
-                    WN,
-                    MMA_M,
-                    MMA_N,
-                    MMA_K,
-                ]
-            ](
+            alias kernel = tensor_core_matrix_multiplication[
+                dtype,
+                layout,
+                layout,
+                layout,
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                MMA_M,
+                MMA_N,
+                MMA_K,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 a_tensor,
                 b_tensor,
                 out_tensor_core_layout,
@@ -339,15 +336,15 @@ def main():
             print("\n=== Running Idiomatic Tiled Matrix Multiplication ===")
 
             # Create separate buffer for tiled result
-            out_tiled = ctx.enqueue_create_buffer[dtype](
-                SIZE * SIZE
-            ).enqueue_fill(0)
+            out_tiled = ctx.enqueue_create_buffer[dtype](SIZE * SIZE)
+            out_tiled.enqueue_fill(0)
             out_tiled_layout = LayoutTensor[dtype, layout](
                 out_tiled.unsafe_ptr()
             )
 
             # Run idiomatic tiled version with proper 2D block configuration
-            ctx.enqueue_function[matmul_idiomatic_tiled[layout, SIZE]](
+            alias kernel = matmul_idiomatic_tiled[layout, SIZE]
+            ctx.enqueue_function_checked[kernel, kernel](
                 out_tiled_layout,
                 a_tensor,
                 b_tensor,
@@ -366,22 +363,21 @@ def main():
 
             # Test 1: Tensor Core vs CPU
             print("\n--- Test 1: Tensor Core vs CPU Reference ---")
-            ctx.enqueue_function[
-                tensor_core_matrix_multiplication[
-                    dtype,
-                    layout,
-                    layout,
-                    layout,
-                    BM,
-                    BN,
-                    BK,
-                    WM,
-                    WN,
-                    MMA_M,
-                    MMA_N,
-                    MMA_K,
-                ]
-            ](
+            alias kernel = tensor_core_matrix_multiplication[
+                dtype,
+                layout,
+                layout,
+                layout,
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                MMA_M,
+                MMA_N,
+                MMA_K,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 a_tensor,
                 b_tensor,
                 out_tensor_core_layout,
@@ -446,14 +442,14 @@ def main():
 
             # Test 2: Idiomatic Tiled vs CPU
             print("\n--- Test 2: Idiomatic Tiled vs CPU Reference ---")
-            out_tiled = ctx.enqueue_create_buffer[dtype](
-                SIZE * SIZE
-            ).enqueue_fill(0)
+            out_tiled = ctx.enqueue_create_buffer[dtype](SIZE * SIZE)
+            out_tiled.enqueue_fill(0)
             out_tiled_layout = LayoutTensor[dtype, layout](
                 out_tiled.unsafe_ptr()
             )
 
-            ctx.enqueue_function[matmul_idiomatic_tiled[layout, SIZE]](
+            alias kernel2 = matmul_idiomatic_tiled[layout, SIZE]
+            ctx.enqueue_function_checked[kernel2, kernel2](
                 out_tiled_layout,
                 a_tensor,
                 b_tensor,

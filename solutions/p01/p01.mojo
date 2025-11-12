@@ -11,7 +11,8 @@ alias dtype = DType.float32
 
 # ANCHOR: add_10_solution
 fn add_10(
-    output: UnsafePointer[Scalar[dtype]], a: UnsafePointer[Scalar[dtype]]
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
 ):
     i = thread_idx.x
     output[i] = a[i] + 10.0
@@ -23,22 +24,22 @@ fn add_10(
 def main():
     with DeviceContext() as ctx:
         out = ctx.enqueue_create_buffer[dtype](SIZE)
-        out = out.enqueue_fill(0)
+        out.enqueue_fill(0)
         a = ctx.enqueue_create_buffer[dtype](SIZE)
-        a = a.enqueue_fill(0)
+        a.enqueue_fill(0)
         with a.map_to_host() as a_host:
             for i in range(SIZE):
                 a_host[i] = i
 
-        ctx.enqueue_function[add_10](
-            out.unsafe_ptr(),
-            a.unsafe_ptr(),
+        ctx.enqueue_function_checked[add_10, add_10](
+            out,
+            a,
             grid_dim=BLOCKS_PER_GRID,
             block_dim=THREADS_PER_BLOCK,
         )
 
         expected = ctx.enqueue_create_host_buffer[dtype](SIZE)
-        expected = expected.enqueue_fill(0)
+        expected.enqueue_fill(0)
         ctx.synchronize()
 
         for i in range(SIZE):

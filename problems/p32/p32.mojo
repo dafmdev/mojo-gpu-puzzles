@@ -18,8 +18,8 @@ alias layout = Layout.row_major(SIZE)
 fn no_conflict_kernel[
     layout: Layout
 ](
-    output: LayoutTensor[mut=True, dtype, layout],
-    input: LayoutTensor[mut=False, dtype, layout],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
+    input: LayoutTensor[dtype, layout, ImmutAnyOrigin],
     size: Int,
 ):
     """Perfect shared memory access - no bank conflicts.
@@ -32,7 +32,7 @@ fn no_conflict_kernel[
     shared_buf = LayoutTensor[
         dtype,
         Layout.row_major(TPB),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -61,8 +61,8 @@ fn no_conflict_kernel[
 fn two_way_conflict_kernel[
     layout: Layout
 ](
-    output: LayoutTensor[mut=True, dtype, layout],
-    input: LayoutTensor[mut=False, dtype, layout],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
+    input: LayoutTensor[dtype, layout, ImmutAnyOrigin],
     size: Int,
 ):
     """Stride-2 shared memory access - creates 2-way bank conflicts.
@@ -75,7 +75,7 @@ fn two_way_conflict_kernel[
     shared_buf = LayoutTensor[
         dtype,
         Layout.row_major(TPB),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -112,8 +112,10 @@ fn benchmark_no_conflict[test_size: Int](mut b: Bencher) raises:
     @always_inline
     fn kernel_workflow(ctx: DeviceContext) raises:
         alias layout = Layout.row_major(test_size)
-        out = ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
-        input_buf = ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
+        out = ctx.enqueue_create_buffer[dtype](test_size)
+        out.enqueue_fill(0)
+        input_buf = ctx.enqueue_create_buffer[dtype](test_size)
+        input_buf.enqueue_fill(0)
 
         with input_buf.map_to_host() as input_host:
             for i in range(test_size):
@@ -124,7 +126,8 @@ fn benchmark_no_conflict[test_size: Int](mut b: Bencher) raises:
             input_buf.unsafe_ptr()
         )
 
-        ctx.enqueue_function[no_conflict_kernel[layout]](
+        alias kernel = no_conflict_kernel[layout]
+        ctx.enqueue_function_checked[kernel, kernel](
             out_tensor,
             input_tensor,
             test_size,
@@ -145,8 +148,10 @@ fn benchmark_two_way_conflict[test_size: Int](mut b: Bencher) raises:
     @always_inline
     fn kernel_workflow(ctx: DeviceContext) raises:
         alias layout = Layout.row_major(test_size)
-        out = ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
-        input_buf = ctx.enqueue_create_buffer[dtype](test_size).enqueue_fill(0)
+        out = ctx.enqueue_create_buffer[dtype](test_size)
+        out.enqueue_fill(0)
+        input_buf = ctx.enqueue_create_buffer[dtype](test_size)
+        input_buf.enqueue_fill(0)
 
         with input_buf.map_to_host() as input_host:
             for i in range(test_size):
@@ -157,7 +162,8 @@ fn benchmark_two_way_conflict[test_size: Int](mut b: Bencher) raises:
             input_buf.unsafe_ptr()
         )
 
-        ctx.enqueue_function[two_way_conflict_kernel[layout]](
+        alias kernel = two_way_conflict_kernel[layout]
+        ctx.enqueue_function_checked[kernel, kernel](
             out_tensor,
             input_tensor,
             test_size,
@@ -174,8 +180,10 @@ fn benchmark_two_way_conflict[test_size: Int](mut b: Bencher) raises:
 fn test_no_conflict() raises:
     """Test that no-conflict kernel produces correct results."""
     with DeviceContext() as ctx:
-        out = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-        input_buf = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
+        out = ctx.enqueue_create_buffer[dtype](SIZE)
+        out.enqueue_fill(0)
+        input_buf = ctx.enqueue_create_buffer[dtype](SIZE)
+        input_buf.enqueue_fill(0)
 
         with input_buf.map_to_host() as input_host:
             for i in range(SIZE):
@@ -186,7 +194,8 @@ fn test_no_conflict() raises:
             input_buf.unsafe_ptr()
         )
 
-        ctx.enqueue_function[no_conflict_kernel[layout]](
+        alias kernel = no_conflict_kernel[layout]
+        ctx.enqueue_function_checked[kernel, kernel](
             out_tensor,
             input_tensor,
             SIZE,
@@ -205,8 +214,10 @@ fn test_no_conflict() raises:
 fn test_two_way_conflict() raises:
     """Test that 2-way conflict kernel produces identical results."""
     with DeviceContext() as ctx:
-        out = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-        input_buf = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
+        out = ctx.enqueue_create_buffer[dtype](SIZE)
+        out.enqueue_fill(0)
+        input_buf = ctx.enqueue_create_buffer[dtype](SIZE)
+        input_buf.enqueue_fill(0)
 
         with input_buf.map_to_host() as input_host:
             for i in range(SIZE):
@@ -217,7 +228,8 @@ fn test_two_way_conflict() raises:
             input_buf.unsafe_ptr()
         )
 
-        ctx.enqueue_function[two_way_conflict_kernel[layout]](
+        alias kernel = two_way_conflict_kernel[layout]
+        ctx.enqueue_function_checked[kernel, kernel](
             out_tensor,
             input_tensor,
             SIZE,

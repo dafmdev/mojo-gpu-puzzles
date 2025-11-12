@@ -14,15 +14,14 @@ alias dtype = DType.float32
 
 def test_softmax():
     with DeviceContext() as ctx:
-        out = ctx.enqueue_create_buffer[DType.float32](SIZE).enqueue_fill(0)
-        inp = ctx.enqueue_create_buffer[DType.float32](SIZE).enqueue_fill(0)
+        out = ctx.enqueue_create_buffer[DType.float32](SIZE)
+        out.enqueue_fill(0)
+        inp = ctx.enqueue_create_buffer[DType.float32](SIZE)
+        inp.enqueue_fill(0)
         # for CPU testing
-        expected = ctx.enqueue_create_host_buffer[DType.float32](
-            SIZE
-        ).enqueue_fill(0)
-        expected_tensor = LayoutTensor[mut=True, dtype, layout](
-            expected.unsafe_ptr()
-        )
+        expected = ctx.enqueue_create_host_buffer[DType.float32](SIZE)
+        expected.enqueue_fill(0)
+        expected_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](expected)
         # Initialize input with more reasonable values
         with inp.map_to_host() as inp_host:
             for i in range(SIZE):
@@ -33,13 +32,13 @@ def test_softmax():
                 print(inp_host[i], end=" ")
             print()
             # Create layout tensors for CPU calculation
-            input_host_tensor = LayoutTensor[mut=True, dtype, layout](
-                inp_host.unsafe_ptr()
+            input_host_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](
+                inp_host
             )
 
         # for GPU testing
-        output_tensor = LayoutTensor[mut=True, dtype, layout](out.unsafe_ptr())
-        input_tensor = LayoutTensor[mut=True, dtype, layout](inp.unsafe_ptr())
+        output_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](out)
+        input_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](inp)
 
         # Compute expected results using our CPU kernel
         softmax_cpu_kernel[layout, SIZE, dtype](
@@ -47,7 +46,8 @@ def test_softmax():
         )
 
         # Run GPU kernel
-        ctx.enqueue_function[softmax_gpu_kernel[layout, SIZE, dtype]](
+        alias kernel = softmax_gpu_kernel[layout, SIZE, dtype]
+        ctx.enqueue_function_checked[kernel, kernel](
             output_tensor,
             input_tensor,
             grid_dim=GRID_DIM_X,
@@ -79,5 +79,5 @@ def test_softmax():
             print("All tests passed 🎉")
 
 
-# def main():
-#     test_softmax()
+def main():
+    test_softmax()

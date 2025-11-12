@@ -24,8 +24,8 @@ alias out_layout = Layout.row_major(1)
 fn cluster_coordination_basics[
     in_layout: Layout, out_layout: Layout, tpb: Int
 ](
-    output: LayoutTensor[mut=True, dtype, out_layout],
-    input: LayoutTensor[mut=False, dtype, in_layout],
+    output: LayoutTensor[dtype, out_layout, MutAnyOrigin],
+    input: LayoutTensor[dtype, in_layout, ImmutAnyOrigin],
     size: Int,
 ):
     """Real cluster coordination using SM90+ cluster APIs."""
@@ -39,7 +39,7 @@ fn cluster_coordination_basics[
     shared_data = LayoutTensor[
         dtype,
         Layout.row_major(tpb),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -79,9 +79,11 @@ fn cluster_coordination_basics[
 fn cluster_collective_operations[
     in_layout: Layout, out_layout: Layout, tpb: Int
 ](
-    output: LayoutTensor[mut=True, dtype, out_layout],
-    input: LayoutTensor[mut=False, dtype, in_layout],
-    temp_storage: LayoutTensor[mut=True, dtype, Layout.row_major(CLUSTER_SIZE)],
+    output: LayoutTensor[dtype, out_layout, MutAnyOrigin],
+    input: LayoutTensor[dtype, in_layout, ImmutAnyOrigin],
+    temp_storage: LayoutTensor[
+        dtype, Layout.row_major(CLUSTER_SIZE), MutAnyOrigin
+    ],
     size: Int,
 ):
     """Cluster-wide collective operations using real cluster APIs."""
@@ -98,8 +100,8 @@ fn cluster_collective_operations[
 fn advanced_cluster_patterns[
     in_layout: Layout, out_layout: Layout, tpb: Int
 ](
-    output: LayoutTensor[mut=True, dtype, out_layout],
-    input: LayoutTensor[mut=False, dtype, in_layout],
+    output: LayoutTensor[dtype, out_layout, MutAnyOrigin],
+    input: LayoutTensor[dtype, in_layout, ImmutAnyOrigin],
     size: Int,
 ):
     """Advanced cluster programming using cluster masks and relaxed synchronization.
@@ -124,27 +126,26 @@ def main():
             print("Testing Multi-Block Coordination")
             print("SIZE:", SIZE, "TPB:", TPB, "CLUSTER_SIZE:", CLUSTER_SIZE)
 
-            input_buf = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-            output_buf = ctx.enqueue_create_buffer[dtype](
-                CLUSTER_SIZE
-            ).enqueue_fill(0)
+            input_buf = ctx.enqueue_create_buffer[dtype](SIZE)
+            input_buf.enqueue_fill(0)
+            output_buf = ctx.enqueue_create_buffer[dtype](CLUSTER_SIZE)
+            output_buf.enqueue_fill(0)
 
             with input_buf.map_to_host() as input_host:
                 for i in range(SIZE):
                     input_host[i] = Float32(i % 10) * 0.1
 
-            input_tensor = LayoutTensor[mut=False, dtype, in_layout](
-                input_buf.unsafe_ptr()
+            input_tensor = LayoutTensor[dtype, in_layout, ImmutAnyOrigin](
+                input_buf
             )
             output_tensor = LayoutTensor[
-                mut=True, dtype, Layout.row_major(CLUSTER_SIZE)
-            ](output_buf.unsafe_ptr())
+                dtype, Layout.row_major(CLUSTER_SIZE), MutAnyOrigin
+            ](output_buf)
 
-            ctx.enqueue_function[
-                cluster_coordination_basics[
-                    in_layout, Layout.row_major(CLUSTER_SIZE), TPB
-                ]
-            ](
+            alias kernel = cluster_coordination_basics[
+                in_layout, Layout.row_major(CLUSTER_SIZE), TPB
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 output_tensor,
                 input_tensor,
                 SIZE,
@@ -183,11 +184,12 @@ def main():
             print("Testing Cluster-Wide Reduction")
             print("SIZE:", SIZE, "TPB:", TPB, "CLUSTER_SIZE:", CLUSTER_SIZE)
 
-            input_buf = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-            output_buf = ctx.enqueue_create_buffer[dtype](1).enqueue_fill(0)
-            temp_buf = ctx.enqueue_create_buffer[dtype](
-                CLUSTER_SIZE
-            ).enqueue_fill(0)
+            input_buf = ctx.enqueue_create_buffer[dtype](SIZE)
+            input_buf.enqueue_fill(0)
+            output_buf = ctx.enqueue_create_buffer[dtype](1)
+            output_buf.enqueue_fill(0)
+            temp_buf = ctx.enqueue_create_buffer[dtype](CLUSTER_SIZE)
+            temp_buf.enqueue_fill(0)
 
             var expected_sum: Float32 = 0.0
             with input_buf.map_to_host() as input_host:
@@ -197,19 +199,20 @@ def main():
 
             print("Expected sum:", expected_sum)
 
-            input_tensor = LayoutTensor[mut=False, dtype, in_layout](
-                input_buf.unsafe_ptr()
+            input_tensor = LayoutTensor[dtype, in_layout, ImmutAnyOrigin](
+                input_buf
             )
-            var output_tensor = LayoutTensor[mut=True, dtype, out_layout](
-                output_buf.unsafe_ptr()
+            var output_tensor = LayoutTensor[dtype, out_layout, MutAnyOrigin](
+                output_buf
             )
             temp_tensor = LayoutTensor[
-                mut=True, dtype, Layout.row_major(CLUSTER_SIZE)
-            ](temp_buf.unsafe_ptr())
+                dtype, Layout.row_major(CLUSTER_SIZE), MutAnyOrigin
+            ](temp_buf)
 
-            ctx.enqueue_function[
-                cluster_collective_operations[in_layout, out_layout, TPB]
-            ](
+            alias kernel = cluster_collective_operations[
+                in_layout, out_layout, TPB
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 output_tensor,
                 input_tensor,
                 temp_tensor,
@@ -237,10 +240,10 @@ def main():
             print("Testing Advanced Cluster Algorithms")
             print("SIZE:", SIZE, "TPB:", TPB, "CLUSTER_SIZE:", CLUSTER_SIZE)
 
-            input_buf = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-            output_buf = ctx.enqueue_create_buffer[dtype](
-                CLUSTER_SIZE
-            ).enqueue_fill(0)
+            input_buf = ctx.enqueue_create_buffer[dtype](SIZE)
+            input_buf.enqueue_fill(0)
+            output_buf = ctx.enqueue_create_buffer[dtype](CLUSTER_SIZE)
+            output_buf.enqueue_fill(0)
 
             with input_buf.map_to_host() as input_host:
                 for i in range(SIZE):
@@ -248,18 +251,17 @@ def main():
                         Float32(i % 50) * 0.02
                     )  # Pattern for testing
 
-            input_tensor = LayoutTensor[mut=False, dtype, in_layout](
-                input_buf.unsafe_ptr()
+            input_tensor = LayoutTensor[dtype, in_layout, ImmutAnyOrigin](
+                input_buf
             )
             output_tensor = LayoutTensor[
-                mut=True, dtype, Layout.row_major(CLUSTER_SIZE)
-            ](output_buf.unsafe_ptr())
+                dtype, Layout.row_major(CLUSTER_SIZE), MutAnyOrigin
+            ](output_buf)
 
-            ctx.enqueue_function[
-                advanced_cluster_patterns[
-                    in_layout, Layout.row_major(CLUSTER_SIZE), TPB
-                ]
-            ](
+            alias kernel = advanced_cluster_patterns[
+                in_layout, Layout.row_major(CLUSTER_SIZE), TPB
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 output_tensor,
                 input_tensor,
                 SIZE,

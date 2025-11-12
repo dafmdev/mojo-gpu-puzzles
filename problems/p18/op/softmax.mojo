@@ -22,8 +22,8 @@ fn softmax_gpu_kernel[
     input_size: Int,
     dtype: DType = DType.float32,
 ](
-    output: LayoutTensor[mut=True, dtype, layout],
-    input: LayoutTensor[mut=False, dtype, layout],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
+    input: LayoutTensor[dtype, layout, ImmutAnyOrigin],
 ):
     # FILL IN (roughly 31 lines)
     ...
@@ -38,8 +38,8 @@ fn softmax_cpu_kernel[
     input_size: Int,
     dtype: DType = DType.float32,
 ](
-    output: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    input: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
+    input: LayoutTensor[dtype, layout, ImmutAnyOrigin],
 ):
     # FILL IN (roughly 10 lines)
     ...
@@ -65,12 +65,12 @@ struct SoftmaxCustomOp:
         ctx: DeviceContextPtr,
     ) raises:
         # Note: rebind is necessary now but it shouldn't be!
-        var output_tensor = rebind[
-            LayoutTensor[dtype, layout, MutableAnyOrigin]
-        ](output.to_layout_tensor())
-        var input_tensor = rebind[
-            LayoutTensor[dtype, layout, MutableAnyOrigin]
-        ](input.to_layout_tensor())
+        var output_tensor = rebind[LayoutTensor[dtype, layout, MutAnyOrigin]](
+            output.to_layout_tensor()
+        )
+        var input_tensor = rebind[LayoutTensor[dtype, layout, ImmutAnyOrigin]](
+            input.to_layout_tensor()
+        )
 
         @parameter
         if target == "gpu":
@@ -79,7 +79,7 @@ struct SoftmaxCustomOp:
             gpu_ctx.enqueue_memset(
                 DeviceBuffer[output_tensor.dtype](
                     gpu_ctx,
-                    rebind[UnsafePointer[Scalar[output_tensor.dtype]]](
+                    rebind[LegacyUnsafePointer[Scalar[output_tensor.dtype]]](
                         output_tensor.ptr
                     ),
                     input_size,
@@ -88,9 +88,8 @@ struct SoftmaxCustomOp:
                 0,
             )
 
-            gpu_ctx.enqueue_function[
-                softmax_gpu_kernel[layout, input_size, dtype]
-            ](
+            alias kernel = softmax_gpu_kernel[layout, input_size, dtype]
+            gpu_ctx.enqueue_function_checked[kernel, kernel](
                 output_tensor,
                 input_tensor,
                 grid_dim=GRID_DIM_X,

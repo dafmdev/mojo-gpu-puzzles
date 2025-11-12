@@ -17,15 +17,15 @@ alias layout = Layout.row_major(SIZE)
 fn add_10_shared_layout_tensor[
     layout: Layout
 ](
-    output: LayoutTensor[mut=True, dtype, layout],
-    a: LayoutTensor[mut=True, dtype, layout],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, layout, ImmutAnyOrigin],
     size: Int,
 ):
     # Allocate shared memory using tensor builder
     shared = LayoutTensor[
         dtype,
         Layout.row_major(TPB),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -50,13 +50,16 @@ fn add_10_shared_layout_tensor[
 
 def main():
     with DeviceContext() as ctx:
-        out = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-        a = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(1)
+        out = ctx.enqueue_create_buffer[dtype](SIZE)
+        out.enqueue_fill(0)
+        a = ctx.enqueue_create_buffer[dtype](SIZE)
+        a.enqueue_fill(1)
 
-        out_tensor = LayoutTensor[dtype, layout](out.unsafe_ptr())
-        a_tensor = LayoutTensor[dtype, layout](a.unsafe_ptr())
+        out_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](out)
+        a_tensor = LayoutTensor[dtype, layout, ImmutAnyOrigin](a)
 
-        ctx.enqueue_function[add_10_shared_layout_tensor[layout]](
+        alias kernel = add_10_shared_layout_tensor[layout]
+        ctx.enqueue_function_checked[kernel, kernel](
             out_tensor,
             a_tensor,
             SIZE,
@@ -64,7 +67,8 @@ def main():
             block_dim=THREADS_PER_BLOCK,
         )
 
-        expected = ctx.enqueue_create_host_buffer[dtype](SIZE).enqueue_fill(11)
+        expected = ctx.enqueue_create_host_buffer[dtype](SIZE)
+        expected.enqueue_fill(11)
         ctx.synchronize()
 
         with out.map_to_host() as out_host:

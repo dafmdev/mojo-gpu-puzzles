@@ -14,8 +14,8 @@ alias dtype = DType.float32
 
 # ANCHOR: pooling_solution
 fn pooling(
-    output: UnsafePointer[Scalar[dtype]],
-    a: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     size: Int,
 ):
     shared = stack_allocation[
@@ -45,26 +45,29 @@ fn pooling(
 
 def main():
     with DeviceContext() as ctx:
-        out = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
-        a = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
+        out = ctx.enqueue_create_buffer[dtype](SIZE)
+        out.enqueue_fill(0)
+        a = ctx.enqueue_create_buffer[dtype](SIZE)
+        a.enqueue_fill(0)
         with a.map_to_host() as a_host:
             for i in range(SIZE):
                 a_host[i] = i
 
-        ctx.enqueue_function[pooling](
-            out.unsafe_ptr(),
-            a.unsafe_ptr(),
+        ctx.enqueue_function_checked[pooling, pooling](
+            out,
+            a,
             SIZE,
             grid_dim=BLOCKS_PER_GRID,
             block_dim=THREADS_PER_BLOCK,
         )
 
-        expected = ctx.enqueue_create_host_buffer[dtype](SIZE).enqueue_fill(0)
+        expected = ctx.enqueue_create_host_buffer[dtype](SIZE)
+        expected.enqueue_fill(0)
 
         ctx.synchronize()
 
         with a.map_to_host() as a_host:
-            ptr = a_host.unsafe_ptr()
+            ptr = a_host
             for i in range(SIZE):
                 s = Scalar[dtype](0)
                 for j in range(max(i - 2, 0), i + 1):
